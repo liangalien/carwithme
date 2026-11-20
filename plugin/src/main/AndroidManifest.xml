@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+      这里**刻意不声明** android:permission 自定义权限，准入完全靠 Service.onBind 里的
+      调用方包名反查（见 CarWithPluginService.isTrustedCaller → PluginApi.HOST_PACKAGES）。
+
+      为什么不留权限：自定义权限即使是 normal，也只在「安装时」下发，而定义方只能是插件 ——
+      宿主早于插件安装就永久拿不到授权，bindService 抛 SecurityException（现场日志：
+      Permission Denial: Accessing service com.ikang.vm.carwithme/.CarWithPluginService from
+      pid=…, uid=… requires com.ikang.vm.permission.CARWITH_PLUGIN）；而宿主也不能自己定义一份
+      同名权限来绕开安装顺序：两个 APK 签名不同，系统会直接拒装插件
+      （INSTALL_FAILED_DUPLICATE_PERMISSION）。
+
+      去掉后未授权的调用方能做的只是把本进程拉起来（onBind 返回 null，拿不到任何 binder）：
+      这是纯普通 App 能力、且本进程本来就会被 CarWith 会话拉起，风险可接受。
+    -->
+
+    <!--
+      帧通道（FrameServer 的 127.0.0.1 回环 socket）与 CarWith 七路
+      （127.0.0.1:7240/8240/…）都走 AF_INET。Android 上创建任何 inet socket 都要
+      INTERNET 权限（进程进 inet GID）：缺了会在 ServerSocket.bind / Socket.connect
+      上直接抛 EACCES，表现为“帧服务监听失败、宿主干等 5 秒拿不到端口”——
+      跟 CarWith 开没开完全无关。
+    -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!--
+      前台服务：MIUI/HyperOS 会把"没有前台服务、也没有可见界面"的进程整个冷冻
+      （cgroup.freeze=1）。被冷冻时**所有**线程一起停摆：VIDEO 读线程不再读 socket（手机侧
+      继续推流，内核 Recv-Q 一路涨到 1MB 以上）、看门狗与体检线程一个 tick 都不跑，
+      表现就是"预览卡在一帧"，而手动打开插件（进程被拉回前台）后立刻恢复。
+
+      本插件唯一的界面就是打开插件本身，所以必须自己把进程提到前台：类型用 specialUse
+      （既不是 mediaProjection 也不是 dataSync，就是本机协议桥接），Android 14+ 需要声明
+      对应的权限与 subtype 说明。
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <!-- 通知权限被拒也照样能进前台（通知不可见而已），声明它只是让提示可见。 -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!--
+      Android 11+ 包可见性：插件要查/拉起手机侧 CarWith（com.miui.carlink）。
+    -->
+    <queries>
+        <package android:name="com.miui.carlink" />
+    </queries>
+
+    <application
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true">
+
+        <!--
+          信息页（同时是桌面入口）：展示版本/契约版本与 GPL-3.0 的源码获取声明
+          —— 这也是分发二进制时的合规要求。
+
+          带 MAIN/LAUNCHER 是刻意的：插件是按宿主需要单独安装的组件，装完之后如果只在「设置 →
+          应用」里存在，用户没法在桌面/应用列表里找到它自查版本或许可证。加了入口之后，
+          `adb shell am start -n com.ikang.vm.carwithme/.InfoActivity` 这种调试手法也不再必要。
+
+          注意：这个入口**不**解决「省电策略」页空白的问题。HyperOS 3 上实测本包名的
+          「设置 → 应用 → CarWithMe → 省电策略」只剩耗电统计、没有策略选项，而把同一份清单
+          换个包名（applicationId）装上去选项就齐全——说明卡点是与包名绑定的系统侧状态，
+          跟清单内容、有没有启动入口都无关。
+        -->
+        <activity
+            android:name=".InfoActivity"
+            android:exported="true"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!--
+          「叫醒」页：透明、进到 onCreate 就 finish，宿主绑定被 MIUI「自启动」拦下时
+          用它把插件进程拉起来再重试（见 WakeActivity 的注释）。
+        -->
+        <activity
+            android:name=".WakeActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+        <!--
+          宿主唯一会绑定的组件。exported 是为了让宿主用显式 action 绑定；准入由 onBind 里的
+          调用方包名反查把关（不在 PluginApi.HOST_PACKAGES 里就直接返回 null，见
+          CarWithPluginService.isTrustedCaller）——不再靠 android:permission，原因见文件头。
+        -->
+        <service
+            android:name=".CarWithPluginService"
+            android:exported="true"
+            android:foregroundServiceType="specialUse">
+            <intent-filter>
+                <action android:name="com.ikang.vm.plugin.action.CARWITH" />
+            </intent-filter>
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="carwith_frame_bridge" />
+        </service>
+    </application>
+
+</manifest>

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  插件自己在桌面/应用列表里的图标（minSdk 29，只需适配自适应图标）。
+
+  设计源文件是 plugin/仪表盘.svg：灰底(#BFBFBF)圆角底板 + 白色仪表盘。
+  分两层是为了让启动器按自己的形状裁剪：底板铺满（圆角由遮罩切出来），
+  仪表盘缩进安全区（见 ic_launcher_foreground 的注释）。
+-->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@drawable/ic_launcher_background" />
+    <foreground android:drawable="@drawable/ic_launcher_foreground" />
+</adaptive-icon>

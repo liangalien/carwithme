@@ -1,0 +1,23 @@
+本插件（com.ikang.vm.carwithme）以 GNU General Public License v3.0
+（GPL-3.0-only）发布，许可证全文随 APK 打包在 assets/GPL-3.0.txt。
+
+一、对应的完整源码
+    仓库：https://github.com/liangalien/VirtualMirroring
+    目录：plugin/（插件本体）、plugin-api/（宿主与插件共用的 AIDL 与帧格式契约）
+    版本：本 APK 构建时所处的 git 提交见应用内信息页的 GIT_COMMIT 一行；
+          按该提交检出即可得到与本二进制一一对应的源码。
+
+二、第三方来源
+    本插件的 CarWith 协议适配层（七路拨号、AES、protobuf 编解码、视频组帧、
+    触摸/硬键注入、拉起 CarWith 入口）派生自 cardisplay2 项目（GPL-3.0），
+    并已按本项目需要修改。每个派生文件的文件头都带有修改声明。
+
+三、与宿主软件的关系
+    宿主 com.ikang.vm.next）是独立程序，与本插件只通过api 契约往来，不共享实现代码、
+    不链接、也不与本插件捆绑分发。因此两者是 GPL-3.0 第 5 条所称的
+    "aggregate"，宿主不受 GPL-3.0 传染。
+
+四、你的权利
+    你可以按 GPL-3.0 的条款复制、修改、再分发本插件；分发二进制时必须同时
+    提供上面的完整源码。本声明不构成对 GPL-3.0 的修改，二者冲突时以
+    GPL-3.0 全文为准。
